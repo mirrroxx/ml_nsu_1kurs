@@ -1,48 +1,47 @@
 import pandas as pd
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.preprocessing import LabelEncoder
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    root_mean_squared_error,
+    r2_score,
+    mean_absolute_error,
+)
 
-# Датасет 6: таргет - уровень премии (низкий/средний/высокий)
-df6 = pd.DataFrame({
-    'Completion_Pct': [10, 25, 45, 50, 75, 85, 95, 100],
-    'Experience_Years': [1, 2, 3, 4, 5, 6, 7, 8],
-    'Target': ['Low', 'Low', 'Medium', 'Medium', 'Medium', 'High', 'High', 'High']
-})
+df = pd.read_csv("/content/sample_data/house_price_regression_dataset.csv")
 
-# Масштабирование признака Completion_Pct с помощью MinMaxScaler
-# Обоснование: MinMaxScaler нормализует значения в диапазон [0, 1], 
-# что хорошо подходит для процентов выполнения (Completion_Pct)
-scaler = MinMaxScaler()
-df6[['Completion_Pct']] = scaler.fit_transform(df6[['Completion_Pct']])
+# Проверим есть ли столбцы с пропущенными значениями
+df.isna().any()
 
-# Кодирование таргета с помощью LabelEncoder
-# Обоснование: Уровни премии (Low, Medium, High) имеют естественный порядок,
-# но LabelEncoder назначит им метки 0, 1, 2 соответственно, сохранив этот порядок
-le = LabelEncoder()
-df6['Target'] = le.fit_transform(df6['Target'])
+# Подготовка данных
+X = df.drop("House_Price", axis=1)
+y = df["House_Price"]
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
 
-print("Датасет 6:")
-print(df6)
-print()
 
-# Датасет 7: таргет - одобрение кредита (да/нет)
-df7 = pd.DataFrame({
-    'Income_K': [30, 35, 40, 45, 50, 42, 38, 1000],
-    'Credit_Score': [600, 620, 640, 610, 650, 630, 615, 800],
-    'Target': ['No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'No', 'Yes']
-})
+# Создание и обучение модели
+model = LinearRegression()
+model.fit(X_train, y_train)
 
-# Масштабирование признака Income_K с помощью StandardScaler
-# Обоснование: StandardScaler стандартизирует данные (среднее = 0, std = 1),
-# что особенно важно при наличии выброса (1000) в данных о доходе
-scaler = StandardScaler()
-df7[['Income_K']] = scaler.fit_transform(df7[['Income_K']])
+# Делаем предсказание
+y_pred = model.predict(X_test)
 
-# Кодирование таргета с помощью LabelEncoder
-# Обоснование: Бинарная классификация (Yes/No), LabelEncoder преобразует в 1/0
-le = LabelEncoder()
-df7['Target'] = le.fit_transform(df7['Target'])
+# MSE (Среднеквадратичная ошибка): чем ближе к 0, тем лучше
+mse = root_mean_squared_error(y_test, y_pred)
 
-print("Датасет 7:")
-print(df7)
+# RMSE (Корень из MSE): ошибка в тех же единицах, что и целевая переменная
+# (например, в рублях или метрах)
+rmse = root_mean_squared_error(y_test, y_pred, squared=False)
+
+# MAE (Средняя абсолютная ошибка): среднее отклонение
+mae = mean_absolute_error(y_test, y_pred)
+
+# R^2 (Коэффициент детерминации): точность от 0 до 1
+r2 = r2_score(y_test, y_pred)
+
+# Вывод результатов
+print(f"MSE: {mse}")
+print(f"RMSE: {rmse}")
+print(f"MAE: {mae}")
+print(f"R2: {r2}")
