@@ -1,49 +1,67 @@
+import pandas as pd
 import numpy as np
-from sklearn.datasets import load_iris
-from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.metrics import recall_score, confusion_matrix, classification_report, precision_recall_curve
+from sklearn.pipeline import Pipeline
+from sklearn.datasets import load_breast_cancer
 
-# Загрузка и стандартизация данных
-data = load_iris()
-X, y = data.data, data.target
-X_std = StandardScaler().fit_transform(X)
+# Загрузка и подготовка данных
+data = load_breast_cancer()
+X = pd.DataFrame(data.data, columns=data.feature_names)
+y = 1 - pd.Series(data.target)  # 1 = злокачественная
 
-# Разделение на train/test
 X_train, X_test, y_train, y_test = train_test_split(
-    X_std, y, test_size=0.3, random_state=42
-)
+                                                X, y, test_size=0.2,
+                                                random_state=42,
+                                                stratify=y
+                                            )
 
-# Модель с L1
-model_l1 = LogisticRegression(
-    penalty="l1", solver="liblinear", C=0.01, multi_class="ovr"
-)
-model_l1.fit(X_train, y_train)
-y_pred_l1 = model_l1.predict(X_test)
-acc_l1 = accuracy_score(y_test, y_pred_l1)
 
-# Модель с L2
-model_l2 = LogisticRegression(
-    penalty="l2", solver="lbfgs", C=0.01, multi_class="ovr"
-)
-model_l2.fit(X_train, y_train)
-y_pred_l2 = model_l2.predict(X_test)
-acc_l2 = accuracy_score(y_test, y_pred_l2)
+# Создание дополнительных признаков
+def add_features(X):
+    X = X.copy()
+    X['area_ratio'] = X['mean area'] / (X['mean radius']**2 + 1e-6)
+    X['concavity_worst'] = X['worst concave points'] * X['worst area']
+    X['log_area'] = np.log1p(X['worst area'])
+    return X
 
-# Вывод весов для первого класса
-print("Веса признаков (первый класс):")
-print(f"L1 weights: {model_l1.coef_[0]}")
-print(f"L2 weights: {model_l2.coef_[0]}")
 
-print(f"\nТочность L1: {acc_l1:.3f}")
-print(f"Точность L2: {acc_l2:.3f}")
+X_train = add_features(X_train)
+X_test = add_features(X_test)
 
-# Анализ
-print("\nАнализ:")
-if np.sum(model_l1.coef_[0] == 0) > 0:
-    print("- В L1 есть нулевые веса (признаки отсечены)")
-    print("- В L1 наблюдается резкий контраст между признаками")
-    print(
-        "- В L2 веса распределены более равномерно (все признаки учитываются)"
-    )
+# Оптимизированная модель
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('select', SelectKBest(f_classif, k=20)),
+    ('clf', LogisticRegression(class_weight='balanced', solver='liblinear',
+                               random_state=42))
+])
+
+# Поиск лучших параметров по recall
+param_grid = {
+    'select__k': [15, 20, 25],
+    'clf__C': [0.01, 0.1, 1, 10],
+    'clf__penalty': ['l2']
+}
+
+grid = GridSearchCV(pipeline, param_grid, cv=5, scoring='recall', n_jobs=-1)
+grid.fit(X_train, y_train)
+
+# Настройка порога
+y_proba = grid.predict_proba(X_train)[:, 1]
+precisions, recalls, thresholds = precision_recall_curve(y_train, y_proba)
+optimal_threshold = thresholds[np.argmax(recalls[:-1] * (precisions[:-1] >= 0.7))]
+
+# Финальные предсказания
+y_pred = (grid.predict_proba(X_test)[:, 1] >= optimal_threshold).astype(int)
+
+# Результаты
+print(f"Лучшие параметры: {grid.best_params_}")
+print(f"Оптимальный порог: {optimal_threshold:.3f}")
+print(f"\nОтчет по классификации:")
+print(classification_report(y_test, y_pred, target_names=['Доброкач.', 'Злокач.']))
+print(f"Confusion Matrix:\n{confusion_matrix(y_test, y_pred)}")
+print(f"Recall (злокачественные): {recall_score(y_test, y_pred):.4f}")
